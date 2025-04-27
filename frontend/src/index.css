@@ -1,0 +1,151 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --navy: #0a192f;
+    --fluvio: #00BFFF;
+    --groq: #9B60DE;
+    --monad: #00E5BE;
+    --bright-teal: #00E5BE;
+  }
+
+  body {
+    @apply bg-navy text-white font-sans antialiased;
+  }
+
+  h1 {
+    @apply text-4xl sm:text-5xl md:text-6xl font-bold;
+  }
+
+  h2 {
+    @apply text-3xl sm:text-4xl font-bold;
+  }
+}
+
+@layer components {
+  .section {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24;
+  }
+
+  .glass-card {
+    @apply bg-white/5 backdrop-blur-md border border-white/10 rounded-xl shadow-lg;
+  }
+
+  .glow-border {
+    @apply relative border border-white/20 hover:border-white/30 transition-colors;
+  }
+
+  .glow-border::before {
+    content: '';
+    @apply absolute -inset-0.5 rounded-xl blur opacity-0 transition-opacity;
+    background: linear-gradient(45deg, var(--fluvio), var(--groq), var(--monad));
+  }
+
+  .glow-border:hover::before {
+    @apply opacity-15;
+  }
+
+  .btn-primary {
+    @apply bg-gradient-to-r from-fluvio to-monad text-white py-2 px-4 rounded-lg transition-all duration-300 hover:shadow-lg hover:shadow-monad/20;
+  }
+
+  .btn-secondary {
+    @apply bg-white/5 border border-white/20 text-white hover:bg-white/10 py-2 px-4 rounded-lg transition-all duration-300;
+  }
+}
+
+@layer utilities {
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-fluvio to-monad;
+  }
+
+  .highlight-text-fluvio {
+    @apply text-fluvio font-semibold;
+  }
+  
+  .highlight-text-groq {
+    @apply text-groq font-semibold;
+  }
+  
+  .highlight-text-monad {
+    @apply text-monad font-semibold;
+  }
+
+  .sentiment-icon-positive {
+    @apply text-bright-teal;
+  }
+  
+  .sentiment-icon-negative {
+    @apply text-red-400;
+  }
+  
+  .sentiment-icon-neutral {
+    @apply text-gray-400;
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-pulse-slow {
+    animation: pulse 6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  .animate-data-line {
+    animation: data-line 15s linear infinite;
+  }
+
+  .tech-blob {
+    @apply absolute w-96 h-96 rounded-full;
+  }
+
+  .bg-fluvio {
+    background-color: var(--fluvio);
+  }
+  
+  .bg-groq {
+    background-color: var(--groq);
+  }
+  
+  .bg-monad {
+    background-color: var(--monad);
+  }
+}
+
+@keyframes float {
+  0% {
+    transform: translateY(0px) rotate3d(0, 0, 0, 0deg);
+  }
+  50% {
+    transform: translateY(-20px) rotate3d(1, 1, 1, 5deg);
+  }
+  100% {
+    transform: translateY(0px) rotate3d(0, 0, 0, 0deg);
+  }
+}
+
+@keyframes data-line {
+  0% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes fade-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.8s forwards ease-out;
+}
