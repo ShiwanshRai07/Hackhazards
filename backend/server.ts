@@ -7,6 +7,7 @@ import cors from 'cors';
 import path from 'path';
 import { Groq } from 'groq-sdk';
 import fs from 'fs';
+import os from 'os';
 import tesseract from 'tesseract.js';
 
 // Load environment variables
@@ -23,17 +24,16 @@ const groq = new Groq({
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static('uploads'));
 
 // Define file interface for type checking
 interface FileWithOriginalname extends Express.Multer.File {
   originalname: string;
 }
 
-// Multer storage config
+// Use OS temp directory instead of a local uploads folder
 const storage = multer.diskStorage({
   destination: (_req: Request, _file: Express.Multer.File, cb) => {
-    cb(null, 'uploads/');
+    cb(null, os.tmpdir());
   },
   filename: (_req: Request, file: Express.Multer.File, cb) => {
     cb(null, Date.now() + path.extname(file.originalname));
@@ -42,7 +42,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 25 * 1024 * 1024 }, // Increased to 25MB for audio files
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB for audio files
   fileFilter: (_req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
     const allowedTypes = /jpeg|jpg|png|gif|mp3|wav|ogg|mpeg/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -54,11 +54,6 @@ const upload = multer({
     }
   }
 });
-
-// Ensure uploads folder exists
-if (!fs.existsSync('uploads')) {
-  fs.mkdirSync('uploads');
-}
 
 // File type checkers
 const isImage = (file: FileWithOriginalname): boolean =>
@@ -152,7 +147,6 @@ interface AnalysisResponse {
   fileType: string;
   extractedText: string;
   analysis: AnalysisResult;
-  fileUrl: string;
 }
 
 // API endpoint
@@ -175,21 +169,29 @@ app.post('/api/analyze', upload.single('file'), async (req: Request, res: Respon
         text = await transcribeAudio(filePath);
         fileType = 'audio';
       }
+
+      // Process the file data
+      const analysis = await analyzeNewsWithGroq(text);
+
+      // Delete the temporary file once processing is complete
+      fs.unlink(filePath, (err) => {
+        if (err) console.error(`Error deleting temporary file ${filePath}:`, err);
+        else console.log(`Successfully deleted temporary file: ${filePath}`);
+      });
+
+      const responseData: AnalysisResponse = {
+        fileType,
+        extractedText: text,
+        analysis
+      };
+
+      res.json(responseData);
     } catch (err: any) {
+      // Make sure to delete the file even if processing fails
+      fs.unlink(filePath, () => {});
       console.error("Processing error:", err);
       return res.status(500).json({ error: 'Error processing file', details: err.message });
     }
-
-    const analysis = await analyzeNewsWithGroq(text);
-
-    const responseData: AnalysisResponse = {
-      fileType,
-      extractedText: text,
-      analysis,
-      fileUrl: `/uploads/${path.basename(filePath)}`
-    };
-
-    res.json(responseData);
 
   } catch (error: any) {
     console.error('Server error:', error);

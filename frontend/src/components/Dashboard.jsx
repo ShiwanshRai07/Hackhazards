@@ -22,6 +22,11 @@ import SentimentFeed from "@/components/SentimentFeed";
 import SentimentOverview from "@/components/SentimentOverview";
 import TopTopics from "@/components/TopTopics";
 
+// Cache keys
+const NEWS_CACHE_KEY = 'news_cache';
+const CACHE_TIMESTAMP_KEY = 'news_cache_timestamp';
+const CACHE_EXPIRY_TIME = 15 * 60 * 1000; // 15 minutes in milliseconds
+
 const Dashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [darkMode, setDarkMode] = useState(true);
@@ -29,89 +34,144 @@ const Dashboard = () => {
   const [selectedTopic, setSelectedTopic] = useState("All Topics");
   const isMobile = useIsMobile();
   const [newsItems, setNewsItems] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   
   function simplifyTrendingNews(data) {
     return data.map(topic => {
       return {
-        pubDate : topic.pubDate,
+        pubDate: topic.pubDate,
         trend: topic.trend,
         news: topic.news.length > 0 ? [topic.news[0]] : [],
         groqAnalysis: topic.groqAnalysis,
-        publishedDate : topic.published_date
+        publishedDate: topic.published_date
       };
     });
   }
+  
   const isGoogleNewsArray = (data) => {
-      return Array.isArray(data) && data.length && Array.isArray(data[0]?.news);
-    };
+    return Array.isArray(data) && data.length && Array.isArray(data[0]?.news);
+  };
   
-    // const formatGoogleNewsItem = (item) => ({
-    //   title: item.title,
-    //   source: new URL(item.newsUrl).hostname,
-    //   time: new Date(item.pubDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    //   snippet: item.groqAnalysis?.summary || item.description || '',
-    //   sentiment: item.groqAnalysis?.sentiment?.toLowerCase() || 'neutral',
-    //   bias: item.groqAnalysis?.bias_level === 'Low' ? '10/100' : '30/100',
-    //   emotion: item.groqAnalysis?.mood || 'Neutral',
-    //   verified: true,
-    //   newItem: true,
-    //   newsUrl: item.newsUrl,
-    // });
+  const formatTrendNewsItem = (newsItem, pubDate, groqAnalysis) => ({
+    title: newsItem.title,
+    source: newsItem.source || new URL(newsItem.url).hostname,
+    time: new Date(pubDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    snippet: groqAnalysis?.summary || '',
+    sentiment: groqAnalysis?.sentiment?.toLowerCase() || 'neutral',
+    bias: groqAnalysis?.bias_level === 'Low' ? '10/100' : '30/100',
+    emotion: groqAnalysis?.mood || 'Neutral',
+    verified: true,
+    newItem: true,
+    newsUrl: newsItem.url,
+  });
   
-    const formatTrendNewsItem = (newsItem, pubDate, groqAnalysis) => ({
-      title: newsItem.title,
-      source: newsItem.source || new URL(newsItem.url).hostname,
-      time: new Date(pubDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      snippet: groqAnalysis?.summary || '',
-      sentiment: groqAnalysis?.sentiment?.toLowerCase() || 'neutral',
-      bias: groqAnalysis?.bias_level === 'Low' ? '10/100' : '30/100',
-      emotion: groqAnalysis?.mood || 'Neutral',
-      verified: true,
-      newItem: true,
-      newsUrl: newsItem.url,
-    });
-  
-    const formatSingleNewsItem = (data) => ({
-      title: data.title,
-      source: new URL(data.newsUrl).hostname,
-      time: new Date(data.pubDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      snippet: data.groqAnalysis?.summary || data.description,
-      sentiment: data.groqAnalysis?.sentiment?.toLowerCase() || 'neutral',
-      bias: data.groqAnalysis?.bias_level === 'Low' ? '10/100' : '30/100',
-      emotion: data.groqAnalysis?.mood || 'Neutral',
-      verified: true,
-      newItem: true,
-      newsUrl: data.newsUrl,
-    });
-  
-  // Usage
+  const formatSingleNewsItem = (data) => ({
+    title: data.title,
+    source: new URL(data.newsUrl).hostname,
+    time: new Date(data.pubDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    snippet: data.groqAnalysis?.summary || data.description,
+    sentiment: data.groqAnalysis?.sentiment?.toLowerCase() || 'neutral',
+    bias: data.groqAnalysis?.bias_level === 'Low' ? '10/100' : '30/100',
+    emotion: data.groqAnalysis?.mood || 'Neutral',
+    verified: true,
+    newItem: true,
+    newsUrl: data.newsUrl,
+  });
+
+  // Load cached news on component mount
   useEffect(() => {
+    const loadCachedNews = () => {
+      try {
+        const cachedNews = localStorage.getItem(NEWS_CACHE_KEY);
+        const cachedTimestamp = localStorage.getItem(CACHE_TIMESTAMP_KEY);
+        
+        if (cachedNews && cachedTimestamp) {
+          const timestamp = parseInt(cachedTimestamp);
+          const now = Date.now();
+          
+          // Check if cache is still valid (less than CACHE_EXPIRY_TIME old)
+          if (now - timestamp < CACHE_EXPIRY_TIME) {
+            const parsedNews = JSON.parse(cachedNews);
+            setNewsItems(parsedNews);
+            console.log('Loaded news from cache:', parsedNews.length, 'items');
+          } else {
+            console.log('Cache expired, fetching fresh data');
+          }
+        } else {
+          console.log('No cache found, fetching fresh data');
+        }
+      } catch (error) {
+        console.error('Error loading cache:', error);
+      }
+      setIsLoading(false);
+    };
+    
+    loadCachedNews();
+  }, []);
+  
+  // Update cache whenever newsItems changes
+  useEffect(() => {
+    if (newsItems.length > 0) {
+      try {
+        localStorage.setItem(NEWS_CACHE_KEY, JSON.stringify(newsItems));
+        localStorage.setItem(CACHE_TIMESTAMP_KEY, Date.now().toString());
+      } catch (error) {
+        console.error('Error updating cache:', error);
+      }
+    }
+  }, [newsItems]);
+
+  // Connect to SSE for live updates
+  useEffect(() => {
+    if (!liveMode) return;
+    
     const eventSource = new EventSource('http://localhost:8080/stream/news/breaking');
 
     eventSource.onmessage = (event) => {
       try {
-        if(!event.data){
+        if (!event.data) {
           console.log("No Data");
+          return;
         }
+        
         const data = JSON.parse(event.data);
-        //console.log(data);        
-
+        
         // Case 1: Fully parsed Google-style array
         if (isGoogleNewsArray(data)) {
           const formatted = simplifyTrendingNews(data);
-          setNewsItems((prevItems) => [...formatted, ...prevItems]);
+          setNewsItems((prevItems) => {
+            // Avoid duplicates by checking if we already have this news item
+            const newItems = formatted.filter(newItem => 
+              !prevItems.some(existingItem => 
+                existingItem.title === newItem.title
+              )
+            );
+            return [...newItems, ...prevItems];
+          });
         }
         // Case 2: Google Trends-like structure with `news` array inside
         else if (Array.isArray(data.news)) {
           const formatted = data.news.map((item) =>
             formatTrendNewsItem(item, data.pubDate, data.groqAnalysis)
           );
-          setNewsItems((prevItems) => [...formatted, ...prevItems]);
+          setNewsItems((prevItems) => {
+            const newItems = formatted.filter(newItem => 
+              !prevItems.some(existingItem => 
+                existingItem.title === newItem.title
+              )
+            );
+            return [...newItems, ...prevItems];
+          });
         }
         // Case 3: Single news object
         else {
           const formatted = formatSingleNewsItem(data);
-          setNewsItems((prevItems) => [formatted, ...prevItems]);
+          setNewsItems((prevItems) => {
+            if (prevItems.some(item => item.title === formatted.title)) {
+              return prevItems; // Skip duplicate
+            }
+            return [formatted, ...prevItems];
+          });
         }
       } catch (err) {
         console.error('Invalid SSE data:', err);
@@ -126,7 +186,15 @@ const Dashboard = () => {
     return () => {
       eventSource.close();
     };
-  }, [newsItems]);
+  }, [liveMode]);
+
+  // Clear cache function
+  const clearCache = () => {
+    localStorage.removeItem(NEWS_CACHE_KEY);
+    localStorage.removeItem(CACHE_TIMESTAMP_KEY);
+    setNewsItems([]);
+    console.log('Cache cleared');
+  };
 
   return (
     <div className="flex-1 flex flex-col h-screen overflow-hidden">
@@ -160,7 +228,7 @@ const Dashboard = () => {
               <span>Live</span>
             </Button>
 
-            <Link to="/chat" onClick={() => setMobileMenuOpen(false)}>
+            <Link to="/chat">
               <Button className="btn-primary w-full rounded-md">
                 Chat Yourself
               </Button>
@@ -191,26 +259,32 @@ const Dashboard = () => {
             </div>
           </div>
 
-          <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-150px)]">
-            <div className="lg:w-3/5 flex flex-col">
-              <ScrollArea className="h-full rounded-lg border border-white/10">
-                <SentimentFeed mockData={newsItems} />
-              </ScrollArea>
+          {isLoading ? (
+            <div className="flex justify-center items-center h-64">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-fluvio"></div>
             </div>
-            <div className="lg:w-2/5 flex flex-col gap-4">
-              <ScrollArea className="h-full rounded-lg border border-white/10">
-                <div className="bg-navy rounded-lg p-4">
-                  <SentimentTrendGraph data={newsItems} />
-                </div>
-                <div className="bg-navy rounded-lg p-4 mt-4">
-                  <SentimentOverview mockData={newsItems} />
-                </div>
-                <div className="bg-navy rounded-lg p-4 mt-4">
-                  <TopTopics />
-                </div>
-              </ScrollArea>
+          ) : (
+            <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-150px)]">
+              <div className="lg:w-3/5 flex flex-col">
+                <ScrollArea className="h-full rounded-lg border border-white/10">
+                  <SentimentFeed mockData={newsItems} />
+                </ScrollArea>
+              </div>
+              <div className="lg:w-2/5 flex flex-col gap-4">
+                <ScrollArea className="h-full rounded-lg border border-white/10">
+                  <div className="bg-navy rounded-lg p-4">
+                    <SentimentTrendGraph data={newsItems} />
+                  </div>
+                  <div className="bg-navy rounded-lg p-4 mt-4">
+                    <SentimentOverview mockData={newsItems} />
+                  </div>
+                  <div className="bg-navy rounded-lg p-4 mt-4">
+                    <TopTopics />
+                  </div>
+                </ScrollArea>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
